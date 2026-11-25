@@ -1,53 +1,68 @@
 /**
- * Author: Simon Lindholm
- * Date: 2017-04-17
- * License: CC0
- * Source: folklore
- * Description: Finds all biconnected components in an undirected graph, and
- *  runs a callback for the edges in each. In a biconnected component there
- *  are at least two internally disjoint paths between any two nodes (a cycle
- *  exists through them). Note that a node can be in several components. An
- *  edge which is not in a component is a bridge, i.e., not part of any cycle.
- * Usage:
- *  int eid = 0; ed.resize(N);
- *  for each edge (a,b) {
- *    ed[a].emplace_back(b, eid);
- *    ed[b].emplace_back(a, eid++); }
- *  bicomps([\&](const vi\& edgelist) {...});
- * Time: O(E + V)
- * Status: tested during MIPT ICPC Workshop 2017
+ * Author: Wzięte z tonowak
+ * Description: Dwuspójne składowe, mosty oraz punkty artykulacji.
+ *  Po skonstruowaniu, \texttt{bicon} = zbiór list id krawędzi, \texttt{bridges} = lista id krawędzi będącymi mostami,
+ *  \texttt{arti\_points} = lista wierzchołków będącymi punktami artykulacji.
+ *  Tablice są nieposortowane. Wspiera multikrawędzie i wiele spójnych, ale nie pętle.
+ * Usage: Low low(n, edges); // edges[i] = {v, u}
+ * Time: O(n + m)
  */
 #pragma once
 
-vi num, st;
-vector<vector<pii>> ed;
-int Time;
-template<class F>
-int dfs(int at, int par, F& f) {
-	int me = num[at] = ++Time, top = me;
-	for (auto [y, e] : ed[at]) if (e != par) {
-		if (num[y]) {
-			top = min(top, num[y]);
-			if (num[y] < me)
-				st.push_back(e);
-		} else {
-			int si = sz(st);
-			int up = dfs(y, e, f);
-			top = min(top, up);
-			if (up == me) {
-				st.push_back(e);
-				f(vi(st.begin() + si, st.end()));
-				st.resize(si);
+struct Low {
+	vector<vector<int>> graph;
+	vector<int> low, pre;
+	vector<pair<int, int>> edges;
+	vector<vector<int>> bicon;
+	vector<int> bicon_stack, arti_points, bridges;
+	int gtime = 0;
+	void dfs(int v, int p) {
+		low[v] = pre[v] = gtime++;
+		bool considered_parent = false;
+		int son_count = 0;
+		bool is_arti = false;
+		for(int e : graph[v]) {
+			int u = edges[e].first ^ edges[e].second ^ v;
+			if(u == p and not considered_parent)
+				considered_parent = true;
+			else if(pre[u] == -1) {
+				bicon_stack.emplace_back(e);
+				dfs(u, v);
+				low[v] = min(low[v], low[u]);
+				if(low[u] >= pre[v]) {
+					bicon.emplace_back();
+					do {
+						bicon.back().emplace_back(bicon_stack.back());
+						bicon_stack.pop_back();
+					} while(bicon.back().back() != e);
+				}
+				++son_count;
+				if(p != -1 and low[u] >= pre[v])
+					is_arti = true;
+				if(low[u] > pre[v])
+					bridges.emplace_back(e);
 			}
-			else if (up < me) st.push_back(e);
-			else { /* e is a bridge */ }
+			else if(pre[v] > pre[u]) {
+				low[v] = min(low[v], pre[u]);
+				bicon_stack.emplace_back(e);
+			}
 		}
+		if(p == -1 and son_count > 1)
+			is_arti = true;
+		if(is_arti)
+			arti_points.emplace_back(v);
 	}
-	return top;
-}
-
-template<class F>
-void bicomps(F f) {
-	num.assign(sz(ed), 0);
-	rep(i,0,sz(ed)) if (!num[i]) dfs(i, -1, f);
-}
+	Low(int n, vector<pair<int, int>> _edges) : graph(n), low(n), pre(n, -1), edges(_edges) {
+		rep(i, 0, sz(edges)) {
+			auto [v, u] = edges[i];
+#ifdef LOCAL
+			assert(v != u);
+#endif
+			graph[v].emplace_back(i);
+			graph[u].emplace_back(i);
+		}
+		rep(v, 0, n)
+			if(pre[v] == -1)
+				dfs(v, -1);
+	}
+};
