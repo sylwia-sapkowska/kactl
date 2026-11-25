@@ -67,6 +67,19 @@ def find_start_comment(source, start=None):
 
     return first
 
+# Estimated height (in pt) of the typeset listing, used to keep short listings
+# from being split across columns/pages. None = only the default 3-line check.
+needspace_pt = None
+LINE_PT = 8.0       # line pitch of code and description text
+CHARS_PER_LINE = 75 # characters of description text per column line
+KEEP_WHOLE_PT = 240  # listings shorter than this (~27 lines) are never split
+
+def estimate_height(text_lines, code_lines):
+    global needspace_pt
+    h = 22 + LINE_PT * (text_lines + code_lines)
+    # short listing: keep whole; long one: at least the description and a few code lines together
+    needspace_pt = h if h <= KEEP_WHOLE_PT else 22 + LINE_PT * (text_lines + min(code_lines, 6))
+
 def processwithcomments(caption, instream, outstream, listingslang):
     knowncommands = ['Author', 'Date', 'Description', 'Source', 'Time', 'Memory', 'License', 'Status', 'Usage', 'Details']
     requiredcommands = ['Author', 'Description']
@@ -176,6 +189,12 @@ def processwithcomments(caption, instream, outstream, listingslang):
         langstr = ", language="+listingslang
         out.append(r"\begin{lstlisting}[caption={%s}%s]" % (pathescape(caption), langstr))
         out.append(nsource)
+        text_lines = 0
+        for key in ["Description", "Time", "Memory"]:
+            for par in commands.get(key, "").split("\n"):
+                text_lines += -(-len(par) // CHARS_PER_LINE) if par.strip() else 0
+        text_lines += len(commands.get("Usage", "").split("\n")) if commands.get("Usage") else 0
+        estimate_height(text_lines, len(nsource.split("\n")))
         out.append(r"\end{lstlisting}")
 
     for line in out:
@@ -188,6 +207,7 @@ def processraw(caption, instream, outstream, listingslang = 'raw'):
         print(r"\rightcaption{%d lines}" % len(source.split("\n")), file=outstream)
         print(r"\begin{lstlisting}[language=%s,caption={%s}]" % (listingslang, pathescape(caption)), file=outstream)
         print(source, file=outstream)
+        estimate_height(0, len(source.split("\n")))
         print(r"\end{lstlisting}", file=outstream)
     except:
         print(r"\kactlerror{Could not read source.}", file=outstream)
@@ -237,6 +257,7 @@ def main():
     instream = sys.stdin
     outstream = sys.stdout
     print_header_value = None
+    output = None
     try:
         opts, args = getopt.getopt(sys.argv[1:], "ho:i:l:c:", ["help", "output=", "input=", "language=", "caption=", "print-header="])
         for option, value in opts:
@@ -252,6 +273,7 @@ def main():
                 return
             if option in ("-o", "--output"):
                 outstream = open(value, "w")
+                output = value
             if option in ("-i", "--input"):
                 instream = open(value)
                 if language == None:
@@ -286,6 +308,9 @@ def main():
             processraw(caption, instream, outstream, 'Python')
         else:
             raise ValueError("Unknown language: " + str(language))
+        if output:
+            with open(output + ".need", "w") as f:
+                print(r"\myneedspace{%.1fpt}" % needspace_pt if needspace_pt else r"\myneedspace{3\baselineskip}", file=f)
     except (ValueError, getopt.GetoptError, IOError) as err:
         print(str(err), file=sys.stderr)
         print("\t for help use --help", file=sys.stderr)
